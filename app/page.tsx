@@ -582,7 +582,7 @@ export default function DompetPintarPro() {
                       <Pie data={chartData} innerRadius={55} outerRadius={75} paddingAngle={8} dataKey="value" stroke="none">
                         {chartData.map((entry, index) => <Cell key={index} fill={entry.color} />)}
                       </Pie>
-                      <Tooltip formatter={(value: number) => formatIDR(value)} contentStyle={{backgroundColor: isDarkMode ? '#0f172a' : '#fff', border: 'none', borderRadius: '12px', color: isDarkMode ? '#fff' : '#000', fontSize: '12px'}} />
+                     <Tooltip formatter={(value: any) => formatIDR(Number(value))} contentStyle={{backgroundColor: isDarkMode ? '#0f172a' : '#fff', border: 'none', borderRadius: '12px', color: isDarkMode ? '#fff' : '#000', fontSize: '12px'}} />
                     </PieChart>
                   </ResponsiveContainer>
                 )}
@@ -612,7 +612,7 @@ export default function DompetPintarPro() {
                       <Pie data={categoryChartData} innerRadius={45} outerRadius={65} paddingAngle={5} dataKey="value" stroke="none">
                         {categoryChartData.map((entry, index) => <Cell key={index} fill={entry.color} />)}
                       </Pie>
-                      <Tooltip formatter={(value: number) => formatIDR(value)} contentStyle={{backgroundColor: isDarkMode ? '#0f172a' : '#fff', border: 'none', borderRadius: '12px', color: isDarkMode ? '#fff' : '#000', fontSize: '12px'}} />
+                     <Tooltip formatter={(value: any) => formatIDR(Number(value))} contentStyle={{backgroundColor: isDarkMode ? '#0f172a' : '#fff', border: 'none', borderRadius: '12px', color: isDarkMode ? '#fff' : '#000', fontSize: '12px'}} />
                     </PieChart>
                   </ResponsiveContainer>
                 )}
