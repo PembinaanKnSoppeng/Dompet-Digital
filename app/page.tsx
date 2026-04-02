@@ -2,10 +2,12 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '@/lib/supabase';
 import { 
-  Wallet, TrendingUp, TrendingDown, Target, FileText, 
-  Plus, Calendar, PieChart as PieIcon, ArrowUpRight, ArrowDownRight, Tag, Settings, X,
-  Moon, Sun, Filter, LogOut, Lock, Mail, Bot, Sparkles, Search, Download, Loader2,
-  Edit2, Trash2
+  Wallet, Target, FileText, Plus, Calendar, PieChart as PieIcon, 
+  ArrowUpRight, ArrowDownRight, Tag, Settings, X, Moon, Sun, Filter, 
+  LogOut, Lock, Mail, Bot, Sparkles, Search, Download, Loader2,
+  Edit2, Trash2, AlertTriangle, Lightbulb, Zap, CheckCircle2, ArrowUpDown, 
+  Activity, Eye, EyeOff, Receipt, ShieldAlert, RefreshCw, Gem, Briefcase,
+  AlertOctagon, CreditCard, MessageSquare
 } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 import jsPDF from 'jspdf';
@@ -17,7 +19,7 @@ const formatIDR = (amount: number) => {
 
 const CATEGORY_COLORS: any = {
   'Makanan': '#F59E0B', 'Transportasi': '#3B82F6', 'Tagihan': '#EF4444', 
-  'Hiburan': '#8B5CF6', 'Lainnya': '#64748B'
+  'Belanja': '#EC4899', 'Hiburan': '#8B5CF6', 'Investasi': '#14B8A6', 'Lainnya': '#64748B'
 };
 
 export default function DompetPintarPro() {
@@ -33,15 +35,26 @@ export default function DompetPintarPro() {
   const [formData, setFormData] = useState({ title: '', amount: '', type: 'pengeluaran', category: 'Makanan' });
   const [editingId, setEditingId] = useState<string | null>(null); 
 
-  const [initialBalance, setInitialBalance] = useState(0);
-  const [targetSaving, setTargetSaving] = useState(25000000);
-  const [budgetLimit, setBudgetLimit] = useState(5000000); 
+  // SETTINGS
+  const [initialBalance, setInitialBalance] = useState<number | string>(0);
+  const [targetSaving, setTargetSaving] = useState<number | string>(25000000);
+  
+  // BUDGET PER KATEGORI (MICRO-BUDGETING)
+  const [catBudgets, setCatBudgets] = useState<any>({
+    Makanan: '', Transportasi: '', Tagihan: '', Belanja: '', Hiburan: '', Lainnya: ''
+  });
+  
   const [isEditingSettings, setIsEditingSettings] = useState(false);
   const [loading, setLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [filterMonth, setFilterMonth] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [sortBy, setSortBy] = useState('newest'); 
+  
+  const [showBalance, setShowBalance] = useState(true);
+  const [aiPersonality, setAiPersonality] = useState('motivator'); 
+  const [selectedReceipt, setSelectedReceipt] = useState<any>(null); 
 
   const fetchData = async () => {
     setLoading(true);
@@ -60,41 +73,48 @@ export default function DompetPintarPro() {
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === 'SIGNED_IN') {
-        setSession(session);
-        fetchData();
-      } else if (event === 'SIGNED_OUT') {
-        setSession(null);
-        setTransactions([]);
-      }
+      if (event === 'SIGNED_IN') { setSession(session); fetchData(); } 
+      else if (event === 'SIGNED_OUT') { setSession(null); setTransactions([]); }
     });
 
+    // Load Settings
     const savedBalance = localStorage.getItem('fin_initialBalance');
     const savedTarget = localStorage.getItem('fin_targetSaving');
-    const savedBudget = localStorage.getItem('fin_budgetLimit');
+    const savedBudgets = localStorage.getItem('fin_catBudgets');
     const savedTheme = localStorage.getItem('fin_theme'); 
+    const savedPrivacy = localStorage.getItem('fin_privacy'); 
+    const savedPersonality = localStorage.getItem('fin_ai_personality'); 
     
     if (savedBalance) setInitialBalance(Number(savedBalance));
     if (savedTarget) setTargetSaving(Number(savedTarget));
-    if (savedBudget) setBudgetLimit(Number(savedBudget));
-    if (savedTheme === 'dark') {
-      setIsDarkMode(true);
-      document.documentElement.classList.add('dark');
-    }
+    if (savedBudgets) setCatBudgets(JSON.parse(savedBudgets));
+    
+    if (savedTheme === 'dark') setIsDarkMode(true);
+    if (savedPrivacy === 'hidden') setShowBalance(false);
+    if (savedPersonality) setAiPersonality(savedPersonality);
 
     return () => subscription.unsubscribe();
   }, []);
 
   useEffect(() => {
     if (!isMounted) return; 
-    if (isDarkMode) {
-      document.documentElement.classList.add('dark');
-      localStorage.setItem('fin_theme', 'dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-      localStorage.setItem('fin_theme', 'light');
-    }
+    if (isDarkMode) { document.documentElement.classList.add('dark'); localStorage.setItem('fin_theme', 'dark'); } 
+    else { document.documentElement.classList.remove('dark'); localStorage.setItem('fin_theme', 'light'); }
   }, [isDarkMode, isMounted]);
+
+  const togglePrivacy = () => {
+    const newVal = !showBalance;
+    setShowBalance(newVal);
+    localStorage.setItem('fin_privacy', newVal ? 'visible' : 'hidden');
+  };
+
+  const toggleAIPersonality = () => {
+    const newVal = aiPersonality === 'motivator' ? 'roasting' : 'motivator';
+    setAiPersonality(newVal);
+    localStorage.setItem('fin_ai_personality', newVal);
+  };
+
+  const displayMoney = (amount: number) => showBalance ? formatIDR(amount) : 'Rp ••••••••';
 
   const username = session?.user?.email ? session.user.email.split('@')[0] : '';
   const displayUsername = username.charAt(0).toUpperCase() + username.slice(1);
@@ -102,33 +122,34 @@ export default function DompetPintarPro() {
   // AI Auto-Kategori
   useEffect(() => {
     if (editingId) return; 
-
     if (formData.type === 'pengeluaran' && formData.title) {
       const t = formData.title.toLowerCase();
-      if (t.includes('makan') || t.includes('minum') || t.includes('kopi') || t.includes('kfc') || t.includes('mcd') || t.includes('gofood') || t.includes('bakso')) {
+      if (t.includes('emas') || t.includes('saham') || t.includes('reksadana') || t.includes('crypto') || t.includes('bibit') || t.includes('deposito')) {
+        setFormData(prev => ({...prev, category: 'Investasi'}));
+      } else if (t.includes('makan') || t.includes('minum') || t.includes('kopi') || t.includes('kfc') || t.includes('mcd') || t.includes('gofood') || t.includes('bakso') || t.includes('sate') || t.includes('warteg') || t.includes('indomaret') || t.includes('alfamart') || t.includes('snack')) {
         setFormData(prev => ({...prev, category: 'Makanan'}));
-      } else if (t.includes('bensin') || t.includes('parkir') || t.includes('gojek') || t.includes('grab') || t.includes('tol') || t.includes('kereta')) {
+      } else if (t.includes('bensin') || t.includes('parkir') || t.includes('gojek') || t.includes('grab') || t.includes('tol') || t.includes('kereta') || t.includes('pesawat') || t.includes('travel') || t.includes('ojol')) {
         setFormData(prev => ({...prev, category: 'Transportasi'}));
-      } else if (t.includes('listrik') || t.includes('air') || t.includes('wifi') || t.includes('pulsa') || t.includes('indihome') || t.includes('kos') || t.includes('pajak')) {
+      } else if (t.includes('listrik') || t.includes('air') || t.includes('wifi') || t.includes('pulsa') || t.includes('indihome') || t.includes('kos') || t.includes('pajak') || t.includes('pdam') || t.includes('bpjs') || t.includes('token') || t.includes('cicilan') || t.includes('utang') || t.includes('paylater') || t.includes('netflix') || t.includes('spotify')) {
         setFormData(prev => ({...prev, category: 'Tagihan'}));
-      } else if (t.includes('nonton') || t.includes('netflix') || t.includes('spotify') || t.includes('game') || t.includes('bioskop') || t.includes('jalan')) {
+      } else if (t.includes('shopee') || t.includes('tokopedia') || t.includes('baju') || t.includes('sepatu') || t.includes('skincare') || t.includes('tiktok') || t.includes('belanja')) {
+        setFormData(prev => ({...prev, category: 'Belanja'}));
+      } else if (t.includes('nonton') || t.includes('game') || t.includes('bioskop') || t.includes('jalan') || t.includes('liburan') || t.includes('topup')) {
         setFormData(prev => ({...prev, category: 'Hiburan'}));
       }
     } else if (formData.type === 'pemasukan' && formData.title) {
       const t = formData.title.toLowerCase();
-      if (t.includes('gaji')) setFormData(prev => ({...prev, category: 'Gaji'}));
-      else if (t.includes('bonus') || t.includes('thr')) setFormData(prev => ({...prev, category: 'Bonus'}));
-      else if (t.includes('investasi') || t.includes('saham') || t.includes('bunga')) setFormData(prev => ({...prev, category: 'Investasi'}));
+      if (t.includes('gaji') || t.includes('upah') || t.includes('fee')) setFormData(prev => ({...prev, category: 'Gaji'}));
+      else if (t.includes('bonus') || t.includes('thr') || t.includes('hadiah') || t.includes('cashback')) setFormData(prev => ({...prev, category: 'Bonus'}));
+      else if (t.includes('jual') || t.includes('profit') || t.includes('dividen') || t.includes('cair')) setFormData(prev => ({...prev, category: 'Investasi'}));
     }
   }, [formData.title, formData.type, editingId]);
 
   const handleAuth = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setAuthLoading(true);
+    e.preventDefault(); setAuthLoading(true);
     if (isRegistering) {
       const { error } = await supabase.auth.signUp({ email: authEmail, password: authPassword });
-      if (error) alert(error.message);
-      else { alert('Registrasi berhasil! Silakan masuk.'); setIsRegistering(false); }
+      if (error) alert(error.message); else { alert('Registrasi berhasil! Silakan masuk.'); setIsRegistering(false); }
     } else {
       const { error } = await supabase.auth.signInWithPassword({ email: authEmail, password: authPassword });
       if (error) alert('Login Gagal: ' + error.message);
@@ -144,16 +165,14 @@ export default function DompetPintarPro() {
   };
 
   const handleLogout = async () => {
-    setIsCheckingAuth(true); 
-    const { error } = await supabase.auth.signOut();
-    if (error) alert("Gagal keluar: " + error.message);
-    setIsCheckingAuth(false);
+    setIsCheckingAuth(true); const { error } = await supabase.auth.signOut();
+    if (error) alert("Gagal keluar: " + error.message); setIsCheckingAuth(false);
   };
 
   const saveSettings = () => {
-    localStorage.setItem('fin_initialBalance', initialBalance.toString());
-    localStorage.setItem('fin_targetSaving', targetSaving.toString());
-    localStorage.setItem('fin_budgetLimit', budgetLimit.toString());
+    localStorage.setItem('fin_initialBalance', (initialBalance || 0).toString());
+    localStorage.setItem('fin_targetSaving', (targetSaving || 0).toString());
+    localStorage.setItem('fin_catBudgets', JSON.stringify(catBudgets));
     setIsEditingSettings(false);
   };
 
@@ -162,54 +181,40 @@ export default function DompetPintarPro() {
       setIsSubmitting(true);
       const { error } = await supabase.from('transactions').delete().not('id', 'is', null);
       if (!error) {
-        localStorage.removeItem('fin_initialBalance');
-        localStorage.removeItem('fin_targetSaving');
-        localStorage.removeItem('fin_budgetLimit');
-        setTransactions([]); setInitialBalance(0); setTargetSaving(25000000); setBudgetLimit(5000000); setIsEditingSettings(false);
+        localStorage.clear(); window.location.reload();
       } else alert("Gagal mereset data.");
       setIsSubmitting(false);
     }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!formData.title || !formData.amount) return;
-    setIsSubmitting(true);
-
+    e.preventDefault(); if (!formData.title || !formData.amount) return; setIsSubmitting(true);
     if (editingId) {
-      const { error } = await supabase.from('transactions').update({
-        title: formData.title, amount: Number(formData.amount), type: formData.type, category: formData.category
-      }).eq('id', editingId);
+      const { error } = await supabase.from('transactions').update({ title: formData.title, amount: Number(formData.amount), type: formData.type, category: formData.category }).eq('id', editingId);
       setIsSubmitting(false);
-      if (!error) { setEditingId(null); setFormData({ title: '', amount: '', type: 'pengeluaran', category: 'Makanan' }); fetchData(); } 
-      else alert("Gagal update data: " + error.message);
+      if (!error) { setEditingId(null); setFormData({ title: '', amount: '', type: 'pengeluaran', category: 'Makanan' }); fetchData(); } else alert("Gagal update data: " + error.message);
     } else {
-      const { error } = await supabase.from('transactions').insert([{ 
-        title: formData.title, amount: Number(formData.amount), type: formData.type, category: formData.category
-      }]);
+      const { error } = await supabase.from('transactions').insert([{ title: formData.title, amount: Number(formData.amount), type: formData.type, category: formData.category }]);
       setIsSubmitting(false);
       if (!error) { setFormData({ title: '', amount: '', type: 'pengeluaran', category: 'Makanan' }); fetchData(); }
     }
   };
 
+  const applyQuickAction = (title: string, amount: string, category: string) => setFormData({ title, amount, type: 'pengeluaran', category });
+
   const handleEditClick = (t: any) => {
-    setEditingId(t.id);
-    setFormData({ title: t.title, amount: t.amount.toString(), type: t.type, category: t.category });
+    setEditingId(t.id); setFormData({ title: t.title, amount: t.amount.toString(), type: t.type, category: t.category });
     document.getElementById('formCatat')?.scrollIntoView({ behavior: 'smooth' });
   };
 
   const handleDeleteTransaction = async (id: string) => {
     if (window.confirm("🗑️ Apakah kamu yakin ingin menghapus transaksi ini?")) {
       const { error } = await supabase.from('transactions').delete().eq('id', id);
-      if (!error) fetchData();
-      else alert("Gagal menghapus: " + error.message);
+      if (!error) fetchData(); else alert("Gagal menghapus: " + error.message);
     }
   };
 
-  const handleCancelEdit = () => {
-    setEditingId(null);
-    setFormData({ title: '', amount: '', type: 'pengeluaran', category: 'Makanan' });
-  };
+  const handleCancelEdit = () => { setEditingId(null); setFormData({ title: '', amount: '', type: 'pengeluaran', category: 'Makanan' }); };
 
   const availableMonths = useMemo(() => {
     const months = new Set(transactions.map(t => `${new Date(t.created_at).getFullYear()}-${String(new Date(t.created_at).getMonth() + 1).padStart(2, '0')}`));
@@ -217,102 +222,129 @@ export default function DompetPintarPro() {
   }, [transactions]);
 
   const filteredTransactions = useMemo(() => {
-    let result = transactions;
-    if (filterMonth !== 'all') {
-      result = result.filter(t => `${new Date(t.created_at).getFullYear()}-${String(new Date(t.created_at).getMonth() + 1).padStart(2, '0')}` === filterMonth);
-    }
-    if (searchQuery) {
-      result = result.filter(t => 
-        t.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
-        t.category.toLowerCase().includes(searchQuery.toLowerCase())
-      );
-    }
+    let result = [...transactions];
+    if (filterMonth !== 'all') result = result.filter(t => `${new Date(t.created_at).getFullYear()}-${String(new Date(t.created_at).getMonth() + 1).padStart(2, '0')}` === filterMonth);
+    if (searchQuery) result = result.filter(t => t.title.toLowerCase().includes(searchQuery.toLowerCase()) || t.category.toLowerCase().includes(searchQuery.toLowerCase()));
+    if (sortBy === 'newest') result.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    else if (sortBy === 'oldest') result.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+    else if (sortBy === 'highest') result.sort((a, b) => Number(b.amount) - Number(a.amount));
+    else if (sortBy === 'lowest') result.sort((a, b) => Number(a.amount) - Number(b.amount));
     return result;
-  }, [transactions, filterMonth, searchQuery]);
+  }, [transactions, filterMonth, searchQuery, sortBy]);
 
+  // STATISTIK KEKAYAAN, CASHFLOW & LANGGANAN
   const stats = useMemo(() => {
-    const income = filteredTransactions.filter(t => t.type === 'pemasukan').reduce((acc, curr) => acc + Number(curr.amount), 0);
+    const income = filteredTransactions.filter(t => t.type === 'pemasukan' && t.category !== 'Investasi').reduce((acc, curr) => acc + Number(curr.amount), 0);
     const expense = filteredTransactions.filter(t => t.type === 'pengeluaran').reduce((acc, curr) => acc + Number(curr.amount), 0);
-    const balance = (filterMonth === 'all' ? initialBalance : 0) + income - expense;
-    const totalGlobalIncome = transactions.filter(t => t.type === 'pemasukan').reduce((acc, curr) => acc + Number(curr.amount), 0);
-    const totalGlobalExpense = transactions.filter(t => t.type === 'pengeluaran').reduce((acc, curr) => acc + Number(curr.amount), 0);
-    const globalBalance = initialBalance + totalGlobalIncome - totalGlobalExpense;
-    const remaining = Math.max(0, targetSaving - globalBalance);
-    const sisaBulanan = income - expense;
-    const days = (sisaBulanan > 0 && remaining > 0) ? Math.ceil((remaining / (sisaBulanan / 30))) : 0;
-    const dailyRec = days > 0 ? Math.floor(remaining / days) : 0;
+    
+    const investmentBought = filteredTransactions.filter(t => t.type === 'pengeluaran' && t.category === 'Investasi').reduce((acc, curr) => acc + Number(curr.amount), 0);
+    const investmentSold = filteredTransactions.filter(t => t.type === 'pemasukan' && t.category === 'Investasi').reduce((acc, curr) => acc + Number(curr.amount), 0);
+    const totalAssets = investmentBought - investmentSold; 
 
-    return { income, expense, balance, remaining, days, dailyRec };
-  }, [filteredTransactions, transactions, targetSaving, initialBalance, filterMonth]);
+    const totalAllIncome = filteredTransactions.filter(t => t.type === 'pemasukan').reduce((acc, curr) => acc + Number(curr.amount), 0);
+    const balance = (filterMonth === 'all' ? Number(initialBalance || 0) : 0) + totalAllIncome - expense;
+    const netWorth = balance + Math.max(0, totalAssets); 
 
-  const chartData = [
-    { name: 'Pemasukan', value: stats.income > 0 ? stats.income : 1, color: '#10B981' },
-    { name: 'Pengeluaran', value: stats.expense > 0 ? stats.expense : 1, color: '#F43F5E' },
-  ];
+    const recurringKeywords = ['netflix', 'spotify', 'wifi', 'indihome', 'bpjs', 'listrik', 'air', 'utang', 'cicilan', 'paylater', 'langganan', 'kredit', 'pinjaman', 'kos'];
+    const billsTransactions = filteredTransactions.filter(t => 
+      t.type === 'pengeluaran' && (t.category === 'Tagihan' || recurringKeywords.some(kw => t.title.toLowerCase().includes(kw)))
+    );
+    const totalBills = billsTransactions.reduce((acc, curr) => acc + Number(curr.amount), 0);
+
+    const globalTotalIncome = transactions.filter(t => t.type === 'pemasukan').reduce((acc, curr) => acc + Number(curr.amount), 0);
+    const globalTotalExpense = transactions.filter(t => t.type === 'pengeluaran').reduce((acc, curr) => acc + Number(curr.amount), 0);
+    const globalBalance = Number(initialBalance || 0) + globalTotalIncome - globalTotalExpense;
+    const globalInvBought = transactions.filter(t => t.type === 'pengeluaran' && t.category === 'Investasi').reduce((acc, curr) => acc + Number(curr.amount), 0);
+    const globalInvSold = transactions.filter(t => t.type === 'pemasukan' && t.category === 'Investasi').reduce((acc, curr) => acc + Number(curr.amount), 0);
+    const globalAssets = Math.max(0, globalInvBought - globalInvSold);
+    const globalNetWorth = globalBalance + globalAssets;
+
+    return { income, expense, balance, totalAssets, netWorth, totalBills, globalNetWorth, billsTransactions };
+  }, [filteredTransactions, transactions, initialBalance, filterMonth]);
+
+  const userLevel = useMemo(() => {
+    const nw = stats.globalNetWorth;
+    if (nw >= 50000000) return { title: 'Sultan', icon: '👑', color: 'text-yellow-600 dark:text-yellow-400 bg-yellow-100 dark:bg-yellow-900/30 border-yellow-200' };
+    if (nw >= 10000000) return { title: 'Master Hemat', icon: '💎', color: 'text-blue-600 dark:text-blue-400 bg-blue-100 dark:bg-blue-900/30 border-blue-200' };
+    if (nw >= 2000000) return { title: 'Prajurit', icon: '🛡️', color: 'text-emerald-600 dark:text-emerald-400 bg-emerald-100 dark:bg-emerald-900/30 border-emerald-200' };
+    return { title: 'Pemula', icon: '🌱', color: 'text-slate-600 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 border-slate-200' };
+  }, [stats.globalNetWorth]);
 
   const categoryChartData = useMemo(() => {
-    const expenses = filteredTransactions.filter(t => t.type === 'pengeluaran');
-    const grouped = expenses.reduce((acc: any, curr) => {
-      acc[curr.category] = (acc[curr.category] || 0) + Number(curr.amount);
-      return acc;
-    }, {});
-    return Object.keys(grouped).map(key => ({
-      name: key, value: grouped[key], color: CATEGORY_COLORS[key] || '#64748B'
-    })).sort((a, b) => b.value - a.value);
+    const expenses = filteredTransactions.filter(t => t.type === 'pengeluaran' && t.category !== 'Investasi'); 
+    const grouped = expenses.reduce((acc: any, curr) => { acc[curr.category] = (acc[curr.category] || 0) + Number(curr.amount); return acc; }, {});
+    return Object.keys(grouped).map(key => ({ name: key, value: grouped[key], color: CATEGORY_COLORS[key] || '#64748B' })).sort((a, b) => b.value - a.value);
   }, [filteredTransactions]);
 
-  const aiInsights = useMemo(() => {
-    if (filteredTransactions.length === 0) return ["Belum ada aktivitas. Yuk, mulai catat transaksimu!"];
+  const smartInsights = useMemo(() => {
+    if (filteredTransactions.length === 0) return [{ type: 'tip', text: aiPersonality === 'motivator' ? "Belum ada aktivitas. Yuk, mulai catat pengeluaran pertamamu!" : "Masih sepi nih. Dompet kosong atau emang malas nyatat?" }];
     let insights = [];
-    if (budgetLimit > 0) {
-      const budgetPercentage = (stats.expense / budgetLimit) * 100;
-      if (budgetPercentage >= 100) {
-        insights.push("🛑 GAWAT! Pengeluaranmu bulan ini sudah MELEBIHI batas anggaran yang kamu buat!");
-      } else if (budgetPercentage > 80) {
-        insights.push(`⚠️ Awas! Pengeluaranmu sudah mencapai ${Math.round(budgetPercentage)}% dari batas anggaran bulan ini.`);
-      } else {
-        insights.push(`👍 Anggaran aman. Sisa jatah pengeluaranmu: ${formatIDR(budgetLimit - stats.expense)}.`);
+    
+    const expensesOnly = filteredTransactions.filter(t => t.type === 'pengeluaran');
+    Object.keys(catBudgets).forEach(cat => {
+      const budget = Number(catBudgets[cat]);
+      if (budget > 0) {
+        const spent = expensesOnly.filter(t => t.category === cat).reduce((acc, curr) => acc + Number(curr.amount), 0);
+        if (spent > budget) {
+          insights.push({ type: 'danger', text: aiPersonality === 'motivator' ? `Peringatan: Kategori ${cat} sudah melebihi batas. Kamu menghabiskan ${formatIDR(spent)} dari jatah ${formatIDR(budget)}.` : `Woy! Jatah ${cat} udah jebol! Limit cuma ${formatIDR(budget)} tapi lu abisin ${formatIDR(spent)}. Gak bisa nahan nafsu ya?` });
+        } else if (spent > budget * 0.8) {
+          insights.push({ type: 'warning', text: aiPersonality === 'motivator' ? `Hati-hati, anggaran ${cat} sudah terpakai ${Math.round((spent/budget)*100)}%. Sisa: ${formatIDR(budget - spent)}.` : `Rem woy! Jatah ${cat} sisa ${formatIDR(budget - spent)} doang. Mau makan batu di akhir bulan?` });
+        }
       }
+    });
+
+    if (stats.income > 0) {
+      const wants = expensesOnly.filter(t => t.category === 'Hiburan' || t.category === 'Belanja').reduce((acc, curr) => acc + Number(curr.amount), 0);
+      const wantsPercentage = (wants / stats.income) * 100;
+      if (wantsPercentage > 30) insights.push({ type: 'warning', text: aiPersonality === 'motivator' ? `Pengeluaran Hiburan/Belanja mencapai ${Math.round(wantsPercentage)}%. Coba pelan-pelan ditekan di bawah 30% ya.` : `Gaya elit ekonomi sulit! Masa ${Math.round(wantsPercentage)}% dari pendapatan habis cuma buat foya-foya. Nabung!` });
     }
-    if (stats.expense > stats.income && stats.income > 0) {
-      insights.push("💸 Pengeluaranmu lebih besar dari pemasukan bulan ini. Rem dulu belanjanya.");
+
+    const pureExpense = stats.expense - stats.totalAssets;
+    if (pureExpense > stats.income && stats.income > 0) {
+      insights.push({ type: 'danger', text: aiPersonality === 'motivator' ? "Perhatian: Pengeluaran konsumsimu bulan ini sudah lebih besar dari pemasukan yang ada." : "Minus bang? Uang masuk dikit, gaya selangit. Kurang-kurangin jajan!" });
     }
-    if (categoryChartData.length > 0) {
-      const topCat = categoryChartData[0];
-      const percentage = Math.round((topCat.value / stats.expense) * 100);
-      if (percentage > 50) {
-        insights.push(`💡 Mayoritas uangmu (${percentage}%) habis untuk ${topCat.name}. Coba evaluasi sektor ini.`);
-      }
-    }
+    
+    if(insights.length === 0) insights.push({ type: 'success', text: "Semua indikator keuanganmu sangat sehat bulan ini. Terus pertahankan prestasimu!" });
+    
     return insights;
-  }, [stats, categoryChartData, budgetLimit, filteredTransactions.length]);
+  }, [stats, catBudgets, filteredTransactions, aiPersonality]);
 
   const exportPDF = () => {
     const doc = new jsPDF();
-    doc.setFontSize(20); doc.text("REKAPITULASI DOMPETPINTAR", 14, 20);
-    doc.setFontSize(10); doc.text(`Status: ${stats.balance >= 0 ? 'Surplus' : 'Defisit'} | Estimasi Target: ${stats.days} Hari`, 14, 30);
+    doc.setFillColor(37, 99, 235); doc.rect(0, 0, 210, 40, 'F');
+    doc.setTextColor(255, 255, 255); doc.setFontSize(22); doc.setFont("helvetica", "bold"); doc.text("Laporan Bulanan", 14, 22);
+    doc.setFontSize(10); doc.setFont("helvetica", "normal");
+    const periodText = filterMonth === 'all' ? 'Semua Waktu' : new Date(`${filterMonth}-01`).toLocaleDateString('id-ID', { month: 'long', year: 'numeric' });
+    doc.text(`Periode: ${periodText}  |  Dibuat pada: ${new Date().toLocaleDateString('id-ID')} ${new Date().toLocaleTimeString('id-ID')}`, 14, 32);
+
+    doc.setTextColor(51, 65, 85); doc.setFontSize(11); doc.setFont("helvetica", "bold"); doc.text("RINGKASAN KEKAYAAN & CASHFLOW:", 14, 52);
+    doc.setFontSize(10); doc.setFont("helvetica", "normal");
+    doc.text(`Total Pemasukan`, 14, 60); doc.text(`:  ${formatIDR(stats.income)}`, 50, 60);
+    doc.text(`Total Pengeluaran`, 14, 66); doc.text(`:  ${formatIDR(stats.expense)}`, 50, 66);
+    doc.setFont("helvetica", "bold"); doc.setTextColor(20, 184, 166); 
+    doc.text(`Total Aset (Investasi)`, 14, 74); doc.text(`:  ${formatIDR(stats.totalAssets)}`, 50, 74);
+    
+    doc.setTextColor(stats.netWorth >= 0 ? 16 : 225, stats.netWorth >= 0 ? 185 : 29, stats.netWorth >= 0 ? 129 : 72); 
+    doc.text(`TOTAL KEKAYAAN`, 14, 82); doc.text(`:  ${formatIDR(stats.netWorth)}`, 50, 82);
+
     autoTable(doc, {
-      startY: 40, head: [['Tanggal', 'Keterangan', 'Kategori', 'Tipe', 'Jumlah']],
-      body: filteredTransactions.map(t => [new Date(t.created_at).toLocaleDateString('id-ID'), t.title, t.category, t.type.toUpperCase(), formatIDR(Number(t.amount))]),
-      theme: 'grid', headStyles: { fillColor: [15, 23, 42] }
+      startY: 90, head: [['Tanggal', 'Keterangan', 'Kategori', 'Tipe', 'Jumlah (Rp)']],
+      body: filteredTransactions.map(t => [new Date(t.created_at).toLocaleDateString('id-ID'), t.title, t.category, t.type === 'pemasukan' ? 'Pemasukan' : 'Pengeluaran', new Intl.NumberFormat('id-ID').format(Number(t.amount))]),
+      theme: 'grid', headStyles: { fillColor: [30, 41, 59], textColor: 255, fontStyle: 'bold' },
+      columnStyles: { 4: { halign: 'right', cellWidth: 40 } }, styles: { fontSize: 9, cellPadding: 3 }, alternateRowStyles: { fillColor: [248, 250, 252] } 
     });
-    doc.save(`Laporan_Keuangan_${new Date().toLocaleDateString('id-ID')}.pdf`);
+
+    const pageCount = (doc as any).internal.getNumberOfPages();
+    for(let i = 1; i <= pageCount; i++) { doc.setPage(i); doc.setFontSize(8); doc.setTextColor(148, 163, 184); doc.text(`Halaman ${i} dari ${pageCount} - DompetPintar`, 105, 285, { align: 'center' }); }
+    doc.save(`Laporan_Keuangan_${filterMonth}_${Date.now()}.pdf`);
   };
 
   const exportCSV = () => {
     const headers = ['Tanggal', 'Keterangan', 'Kategori', 'Tipe', 'Jumlah (Rp)'];
-    const rows = filteredTransactions.map(t => [
-      new Date(t.created_at).toLocaleDateString('id-ID'),
-      t.title.replace(/,/g, ''), 
-      t.category,
-      t.type,
-      t.amount
-    ]);
+    const rows = filteredTransactions.map(t => [new Date(t.created_at).toLocaleDateString('id-ID'), t.title.replace(/,/g, ''), t.category, t.type, t.amount]);
     const csvContent = "data:text/csv;charset=utf-8," + headers.join(",") + "\n" + rows.map(e => e.join(",")).join("\n");
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement("a");
-    link.setAttribute("href", encodedUri);
-    link.setAttribute("download", `Data_Keuangan_${new Date().toLocaleDateString('id-ID')}.csv`);
+    const encodedUri = encodeURI(csvContent); const link = document.createElement("a");
+    link.setAttribute("href", encodedUri); link.setAttribute("download", `Data_Keuangan_${new Date().toLocaleDateString('id-ID')}.csv`);
     document.body.appendChild(link); link.click(); document.body.removeChild(link);
   };
 
@@ -327,14 +359,11 @@ export default function DompetPintarPro() {
     );
   }
 
-  // --- HALAMAN LOGIN ---
   if (!session) {
     return (
       <div className="min-h-screen bg-[#F8FAFC] dark:bg-slate-950 flex flex-col items-center justify-center p-4 md:p-6 transition-colors duration-300">
         <div className="bg-white dark:bg-slate-900 w-full max-w-md p-6 sm:p-8 rounded-3xl sm:rounded-[2.5rem] shadow-sm border border-slate-100 dark:border-slate-800 relative z-10">
-          <button onClick={() => setIsDarkMode(!isDarkMode)} className="absolute top-4 right-4 sm:top-6 sm:right-6 p-2 bg-slate-50 dark:bg-slate-800 rounded-full hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors">
-            {isDarkMode ? <Sun size={18} className="text-amber-500"/> : <Moon size={18} className="text-slate-500"/>}
-          </button>
+          <button onClick={() => setIsDarkMode(!isDarkMode)} className="absolute top-4 right-4 sm:top-6 sm:right-6 p-2 bg-slate-50 dark:bg-slate-800 rounded-full hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"><Sun size={18} className="text-amber-500"/></button>
           
           <div className="text-center mb-6 sm:mb-8 pt-4">
             <div className={`bg-blue-600 w-16 h-16 rounded-3xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-blue-200 dark:shadow-none transition-all duration-500 ${authLoading ? 'scale-110 shadow-blue-400 animate-pulse' : ''}`}>
@@ -353,56 +382,40 @@ export default function DompetPintarPro() {
               <Lock size={20} className="text-slate-400 mr-3 shrink-0" />
               <input required type="password" placeholder="Password (min 6 karakter)" className="bg-transparent outline-none w-full text-slate-700 dark:text-slate-200" value={authPassword} onChange={(e) => setAuthPassword(e.target.value)} disabled={authLoading}/>
             </div>
-            
-            <button disabled={authLoading} type="submit" className="w-full flex items-center justify-center bg-blue-600 text-white font-bold p-4 rounded-2xl hover:bg-blue-700 transition-all active:scale-95 disabled:opacity-70 mt-4 shadow-lg shadow-blue-200 dark:shadow-none min-h-[56px]">
-              {authLoading ? (
-                <div className="flex items-center gap-2">
-                  <Loader2 className="animate-spin" size={20} />
-                  <span>Memproses...</span>
-                </div>
-              ) : isRegistering ? 'Daftar Sekarang' : 'Masuk Dashboard'}
+            <button disabled={authLoading} type="submit" className="w-full flex items-center justify-center bg-blue-600 text-white font-bold p-4 rounded-2xl hover:bg-blue-700 transition-all active:scale-95 min-h-[56px] shadow-lg">
+              {authLoading ? <Loader2 className="animate-spin" size={20} /> : isRegistering ? 'Daftar Sekarang' : 'Masuk Dashboard'}
             </button>
           </form>
 
           {!isRegistering && (
             <>
               <div className="relative my-6"><div className="absolute inset-0 flex items-center"><div className="w-full border-t border-slate-200 dark:border-slate-700"></div></div><div className="relative flex justify-center text-sm"><span className="px-4 bg-white dark:bg-slate-900 text-slate-400 font-medium">ATAU</span></div></div>
-              
-              <button onClick={handleDemoLogin} disabled={authLoading} className="w-full flex items-center justify-center bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 font-bold p-4 rounded-2xl hover:bg-emerald-100 dark:hover:bg-emerald-900/40 transition-all active:scale-95 disabled:opacity-70 border border-emerald-200 dark:border-emerald-800/50 min-h-[56px]">
-                {authLoading ? (
-                  <div className="flex items-center gap-2">
-                    <Loader2 className="animate-spin" size={20} />
-                    <span>Menghubungkan...</span>
-                  </div>
-                ) : (
-                  <span>🚀 Coba Akun Demo</span>
-                )}
+              <button onClick={handleDemoLogin} disabled={authLoading} className="w-full flex items-center justify-center bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 font-bold p-4 rounded-2xl hover:bg-emerald-100 dark:hover:bg-emerald-900/40 transition-all active:scale-95 min-h-[56px] border border-emerald-200">
+                🚀 Coba Akun Demo
               </button>
             </>
           )}
           <div className="mt-8 text-center"><button onClick={() => setIsRegistering(!isRegistering)} className="text-sm font-bold text-slate-500 dark:text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors">{isRegistering ? 'Sudah punya akun? Masuk di sini' : 'Belum punya akun? Daftar gratis!'}</button></div>
         </div>
-
-        {/* FOOTER LOGIN */}
-        <p className="text-center text-slate-400 dark:text-slate-500 text-xs mt-8 font-medium">
-          &copy; {new Date().getFullYear()} Dompet Pintar. By Dewasinarsurya.
-        </p>
       </div>
     );
   }
 
-  // --- DASHBOARD UTAMA ---
   return (
     <div className="min-h-screen bg-[#F8FAFC] dark:bg-slate-950 text-slate-900 dark:text-slate-100 p-4 md:p-8 lg:p-10 font-sans selection:bg-blue-200 relative transition-colors duration-300 flex flex-col">
       <div className="max-w-7xl mx-auto w-full flex-grow">
         
+        {/* HEADER */}
         <header className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 md:mb-10 gap-4 md:gap-6 w-full">
           <div className="w-full md:w-auto flex justify-between items-start md:items-center shrink-0">
             <div>
-              <h1 className="text-3xl md:text-4xl font-black tracking-tight text-slate-900 dark:text-white">Dashboard</h1>
-              <p className="text-slate-500 dark:text-slate-400 font-medium mt-1 text-sm md:text-base">
-                Halo, <span className="text-blue-600 dark:text-blue-400 font-bold">{displayUsername}</span> 👋
-              </p>
+              <h1 className="text-3xl md:text-4xl font-black tracking-tight text-slate-900 dark:text-white">Dompet Digital</h1>
+              <div className="flex items-center gap-2 mt-1">
+                <p className="text-slate-500 dark:text-slate-400 font-medium text-sm md:text-base">Halo, <span className="text-blue-600 dark:text-blue-400 font-bold">{displayUsername}</span> 👋</p>
+                <span className={`flex items-center gap-1 text-[10px] md:text-xs font-bold px-2 py-0.5 rounded-full border ${userLevel.color}`}>
+                  {userLevel.icon} {userLevel.title}
+                </span>
+              </div>
             </div>
             <button onClick={() => setIsDarkMode(!isDarkMode)} className="md:hidden p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm hover:bg-slate-50 dark:hover:bg-slate-800 transition-all active:scale-95 shrink-0">
               {isDarkMode ? <Sun size={20} className="text-amber-500"/> : <Moon size={20} className="text-slate-500"/>}
@@ -422,19 +435,15 @@ export default function DompetPintarPro() {
               <button onClick={() => setIsDarkMode(!isDarkMode)} className="hidden md:block p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm hover:bg-slate-50 dark:hover:bg-slate-800 transition-all active:scale-95">
                 {isDarkMode ? <Sun size={20} className="text-amber-500"/> : <Moon size={20} className="text-slate-500"/>}
               </button>
-              
               <button onClick={() => setIsEditingSettings(true)} className="flex justify-center items-center gap-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 font-bold px-4 py-2.5 md:py-3 rounded-xl sm:rounded-2xl shadow-sm hover:bg-slate-200 dark:hover:bg-slate-700 transition-all border border-slate-200 dark:border-slate-800 active:scale-95 text-sm md:text-base w-full sm:w-auto">
                 <Settings size={18} /> <span>Atur</span>
               </button>
-              
               <button onClick={exportPDF} className="flex justify-center items-center gap-2 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 font-bold px-4 py-2.5 md:py-3 rounded-xl sm:rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 hover:text-blue-600 transition-all active:scale-95 text-sm md:text-base w-full sm:w-auto">
-                <FileText size={18} /> <span>PDF</span>
+                <FileText size={18} /> <span>PDF Bulanan</span>
               </button>
-
               <button onClick={exportCSV} className="flex justify-center items-center gap-2 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400 font-bold px-4 py-2.5 md:py-3 rounded-xl sm:rounded-2xl shadow-sm border border-emerald-200 dark:border-emerald-800 hover:bg-emerald-100 transition-all active:scale-95 text-sm md:text-base w-full sm:w-auto">
                 <Download size={18} /> <span>Excel</span>
               </button>
-              
               <button onClick={handleLogout} className="flex justify-center items-center gap-2 bg-rose-50 dark:bg-rose-900/20 text-rose-600 font-bold px-4 py-2.5 md:py-3 rounded-xl sm:rounded-2xl shadow-sm border border-rose-100 dark:border-rose-800/50 hover:bg-rose-100 dark:hover:bg-rose-900/40 transition-all active:scale-95 text-sm md:text-base w-full sm:w-auto">
                 <LogOut size={18} /> <span>Keluar</span>
               </button>
@@ -442,126 +451,237 @@ export default function DompetPintarPro() {
           </div>
         </header>
 
-        {/* STATS GRID */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-6 mb-6 md:mb-8">
-          <StatCard title="Saldo Saat Ini" val={stats.balance} icon={<Wallet />} color="text-blue-600 dark:text-blue-400" bg="bg-blue-100 dark:bg-blue-900/40" />
-          <StatCard title="Pemasukan" val={stats.income} icon={<ArrowUpRight />} color="text-emerald-600 dark:text-emerald-400" bg="bg-emerald-100 dark:bg-emerald-900/40" />
-          <StatCard title="Pengeluaran" val={stats.expense} icon={<ArrowDownRight />} color="text-rose-600 dark:text-rose-400" bg="bg-rose-100 dark:bg-rose-900/40" />
-          <StatCard title="Target Tabungan" val={targetSaving} icon={<Target />} color="text-amber-600 dark:text-amber-400" bg="bg-amber-100 dark:bg-amber-900/40" />
-        </div>
-
-        {/* AI INSIGHT CARD */}
-        <div className="mb-6 md:mb-8 bg-gradient-to-br from-indigo-50 to-purple-50 dark:from-indigo-950/40 dark:to-purple-900/20 border border-indigo-100 dark:border-indigo-800/50 p-5 md:p-6 rounded-3xl md:rounded-[2rem] shadow-sm">
-          <div className="flex items-center gap-3 mb-3">
-            <div className="bg-indigo-600 p-2 rounded-xl text-white shadow-md shadow-indigo-200 dark:shadow-none"><Sparkles size={18} /></div>
-            <h2 className="font-bold text-indigo-900 dark:text-indigo-100 text-sm md:text-base flex items-center gap-2">Analisis Asisten AI <span className="bg-indigo-200 dark:bg-indigo-800 text-indigo-800 dark:text-indigo-200 text-[10px] px-2 py-0.5 rounded-full font-black uppercase tracking-widest">Beta</span></h2>
-          </div>
-          <div className="space-y-2">
-            {aiInsights.map((insight, idx) => (
-              <div key={idx} className="flex items-start gap-2">
-                <Bot size={16} className={`mt-0.5 shrink-0 ${insight.includes('🛑') || insight.includes('⚠️') ? 'text-rose-500' : 'text-indigo-400'}`} />
-                <p className={`${insight.includes('🛑') ? 'text-rose-600 dark:text-rose-400 font-bold' : 'text-indigo-800/80 dark:text-indigo-200/80'} text-sm md:text-base font-medium leading-snug`}>{insight}</p>
+        {/* 1. HERO: KEKAYAAN & KAS TUNAI SEPARATED */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 md:gap-6 mb-6">
+          <div className="lg:col-span-2 bg-gradient-to-r from-blue-600 to-indigo-600 p-6 md:p-8 rounded-[2rem] shadow-lg shadow-blue-200 dark:shadow-none text-white relative overflow-hidden flex flex-col justify-between">
+            <div className="absolute top-0 right-0 -mt-8 -mr-8 w-32 h-32 bg-white rounded-full opacity-10 blur-2xl"></div>
+            <div className="relative z-10 flex justify-between items-start mb-6">
+              <div>
+                <p className="text-[10px] md:text-xs font-bold uppercase tracking-widest text-blue-200 mb-1">Total Kekayaan (Tunai + Aset)</p>
+                <div className="flex items-center gap-3">
+                  <h2 className="text-3xl sm:text-4xl md:text-5xl font-black tracking-tighter">{displayMoney(stats.netWorth)}</h2>
+                  <button onClick={togglePrivacy} className="text-blue-300 hover:text-white transition-colors">{showBalance ? <Eye size={20} /> : <EyeOff size={20} />}</button>
+                </div>
               </div>
-            ))}
+              <Briefcase size={40} className="text-white opacity-20 hidden sm:block" />
+            </div>
+            
+            <div className="relative z-10 grid grid-cols-2 gap-4 pt-4 border-t border-white/20">
+              <div className="bg-white/10 p-3 rounded-xl backdrop-blur-sm">
+                <p className="text-[9px] md:text-[10px] uppercase tracking-widest text-blue-200 font-bold mb-1 flex items-center gap-1"><Wallet size={12}/> Tabungan Kas</p>
+                <p className="font-black text-sm md:text-lg">{displayMoney(stats.balance)}</p>
+              </div>
+              <div className="bg-white/10 p-3 rounded-xl backdrop-blur-sm border border-teal-400/30">
+                <p className="text-[9px] md:text-[10px] uppercase tracking-widest text-teal-200 font-bold mb-1 flex items-center gap-1"><Gem size={12}/> Aset Investasi</p>
+                <p className="font-black text-sm md:text-lg text-teal-100">{displayMoney(stats.totalAssets)}</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white dark:bg-slate-900 p-6 md:p-8 rounded-[2rem] shadow-sm border border-slate-100 dark:border-slate-800 flex flex-col justify-center">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="font-black text-slate-800 dark:text-white text-base md:text-lg flex items-center gap-2"><Target className="text-amber-500"/> Target Tabungan</h3>
+              <p className="text-sm font-black text-amber-500">{Math.min(100, Math.round((stats.netWorth/Number(targetSaving || 1))*100))}%</p>
+            </div>
+            <div className="h-4 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden shadow-inner mb-4">
+              <div className="h-full bg-gradient-to-r from-amber-400 to-emerald-400 transition-all duration-1000 ease-out" style={{ width: `${Math.max(0, Math.min(100, (stats.netWorth/Number(targetSaving || 1))*100))}%` }} />
+            </div>
+            <div className="flex flex-col gap-1 text-xs font-medium text-slate-500 dark:text-slate-400">
+              <div className="flex justify-between"><span>Terkumpul (Kekayaan):</span> <span className="font-bold text-slate-800 dark:text-slate-200">{displayMoney(stats.netWorth)}</span></div>
+              <div className="flex justify-between"><span>Target Impian:</span> <span className="font-bold text-slate-800 dark:text-slate-200">{displayMoney(Number(targetSaving))}</span></div>
+            </div>
           </div>
         </div>
 
+
+        {/* ======================================================== */}
+        {/* 2. BAGIAN AI (PINDAH KE ATAS AGAR MUDAH DIBACA VIA HP)   */}
+        {/* ======================================================== */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6 mb-6 md:mb-10">
+          
+          {/* RADAR TAGIHAN */}
+          <div className="bg-slate-900 border border-slate-800 p-5 md:p-6 rounded-3xl md:rounded-[2rem] shadow-xl text-white relative overflow-hidden flex flex-col">
+            <div className="absolute top-0 right-0 -mt-6 -mr-6 w-24 h-24 bg-rose-500 rounded-full blur-[40px] opacity-20"></div>
+            <div className="flex items-center gap-2 text-rose-400 mb-4 relative z-10">
+              <CreditCard size={20} />
+              <h3 className="font-bold text-sm uppercase tracking-widest">Radar Tagihan Tetap</h3>
+            </div>
+            <div className="mb-4 relative z-10">
+              <p className="text-[10px] text-slate-400 mb-1">Total Biaya & Cicilan Bulan Ini</p>
+              <p className="text-3xl font-black text-white">{displayMoney(stats.totalBills)}</p>
+            </div>
+            
+            <div className="space-y-2 relative z-10 flex-grow">
+              {stats.billsTransactions.length === 0 ? (
+                 <p className="text-xs text-slate-500 italic mt-2">Aman! Tidak ada tagihan terdeteksi.</p>
+              ) : (
+                stats.billsTransactions.slice(0, 4).map((t: any) => (
+                  <div key={t.id} className="flex justify-between items-center text-xs bg-slate-800/50 p-2.5 rounded-xl border border-slate-700/50">
+                    <span className="font-medium text-slate-300 truncate max-w-[120px]">{t.title}</span>
+                    <span className="font-bold text-rose-400">{formatIDR(Number(t.amount))}</span>
+                  </div>
+                ))
+              )}
+              {stats.billsTransactions.length > 4 && <p className="text-[10px] text-center text-slate-500 mt-2 pt-2">Dan {stats.billsTransactions.length - 4} tagihan lainnya...</p>}
+            </div>
+          </div>
+
+          {/* AI KEPRIBADIAN (MOTIVATOR/ROASTING) */}
+          <div className="lg:col-span-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-5 md:p-6 rounded-3xl md:rounded-[2rem] shadow-sm flex flex-col relative overflow-hidden">
+            {/* Latar Belakang Ornamen */}
+            <div className={`absolute top-0 right-0 w-64 h-64 rounded-full blur-[80px] opacity-20 pointer-events-none ${aiPersonality === 'roasting' ? 'bg-rose-500' : 'bg-indigo-500'}`}></div>
+            
+            <div className="flex justify-between items-start mb-6 relative z-10 border-b border-slate-100 dark:border-slate-800 pb-4">
+              <div className="flex items-center gap-3">
+                <div className={`p-3 rounded-2xl text-white shadow-md ${aiPersonality === 'roasting' ? 'bg-gradient-to-br from-rose-500 to-red-600' : 'bg-gradient-to-br from-indigo-500 to-blue-600'}`}>
+                  {aiPersonality === 'roasting' ? <ShieldAlert size={24} /> : <Bot size={24} />}
+                </div>
+                <div>
+                  <h2 className={`font-black text-base md:text-lg flex items-center gap-2 ${aiPersonality === 'roasting' ? 'text-rose-600 dark:text-rose-400' : 'text-indigo-600 dark:text-indigo-400'}`}>
+                    Asisten AI Pintar <Sparkles size={14}/>
+                  </h2>
+                  <p className="text-[10px] md:text-xs text-slate-500 font-medium">Mendeteksi anomali & memberi masukan</p>
+                </div>
+              </div>
+              <button onClick={toggleAIPersonality} className={`flex items-center gap-2 px-3 py-2 text-[10px] font-bold uppercase tracking-widest rounded-xl transition-colors border ${aiPersonality === 'roasting' ? 'bg-rose-50 text-rose-600 border-rose-200 hover:bg-rose-100 dark:bg-rose-900/20 dark:border-rose-800/50' : 'bg-indigo-50 text-indigo-600 border-indigo-200 hover:bg-indigo-100 dark:bg-indigo-900/20 dark:border-indigo-800/50'}`}>
+                <RefreshCw size={12} /> Mode: {aiPersonality}
+              </button>
+            </div>
+            
+            {/* Tampilan Chat AI */}
+            <div className="space-y-3 relative z-10 custom-scrollbar overflow-y-auto max-h-[200px] md:max-h-none pr-2">
+              {smartInsights.map((insight, idx) => {
+                let boxStyle = "bg-amber-50 text-amber-800 border-amber-200 dark:bg-amber-900/20 dark:text-amber-200 dark:border-amber-800/50";
+                if (insight.type === 'danger') boxStyle = "bg-rose-50 text-rose-800 border-rose-200 dark:bg-rose-900/20 dark:text-rose-200 dark:border-rose-800/50";
+                else if (insight.type === 'success') boxStyle = "bg-emerald-50 text-emerald-800 border-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-200 dark:border-emerald-800/50";
+                else if (insight.type === 'info') boxStyle = "bg-blue-50 text-blue-800 border-blue-200 dark:bg-blue-900/20 dark:text-blue-200 dark:border-blue-800/50";
+                
+                return (
+                  <div key={idx} className="flex items-start gap-3 w-full">
+                    <div className="w-8 h-8 rounded-full bg-slate-200 dark:bg-slate-800 flex items-center justify-center shrink-0 mt-1">
+                      <MessageSquare size={14} className="text-slate-500" />
+                    </div>
+                    <div className={`p-3 md:p-4 rounded-2xl rounded-tl-sm border ${boxStyle} shadow-sm w-full`}>
+                      <p className="text-sm font-medium leading-relaxed">{insight.text}</p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+        {/* ======================================================== */}
+
+
+        {/* MAIN LAYOUT: KIRI (INPUT & RIWAYAT), KANAN (CHART & BUDGETING) */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 md:gap-8">
+          
+          {/* KOLOM KIRI (KONTEN UTAMA) */}
           <div className="lg:col-span-2 space-y-6 md:space-y-8">
             
-            {/* FORM INPUT (BERUBAH JIKA MODE EDIT) */}
+            {/* FORM INPUT PENCATATAN */}
             <section id="formCatat" className={`bg-white dark:bg-slate-900 p-5 md:p-8 rounded-3xl md:rounded-[2.5rem] shadow-sm border transition-all relative overflow-hidden ${editingId ? 'border-amber-300 dark:border-amber-500/50 shadow-amber-100 dark:shadow-none' : 'border-slate-100 dark:border-slate-800'}`}>
               {!editingId && <div className="absolute -top-10 -right-10 text-slate-50 dark:text-slate-800/20 rotate-12"><Sparkles size={150} /></div>}
               
-              <h2 className="text-lg md:text-xl font-bold mb-4 md:mb-6 flex items-center gap-2 text-slate-800 dark:text-white relative z-10">
-                {editingId ? <><Edit2 className="text-amber-500"/> Edit Aktivitas</> : <><Plus className="text-blue-500"/> Catat Aktivitas Baru</>}
-              </h2>
+              <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4 mb-4 md:mb-6 relative z-10">
+                <h2 className="text-lg md:text-xl font-bold flex items-center gap-2 text-slate-800 dark:text-white">
+                  {editingId ? <><Edit2 className="text-amber-500"/> Edit Aktivitas</> : <><Plus className="text-blue-500"/> Catat Aktivitas</>}
+                </h2>
+                {!editingId && (
+                  <div className="flex flex-wrap gap-2">
+                    <button onClick={() => applyQuickAction('Beli Emas Antam', '1500000', 'Investasi')} className="text-[10px] md:text-xs font-bold px-3 py-1.5 rounded-full bg-teal-50 hover:bg-teal-100 dark:bg-teal-900/20 text-teal-700 dark:text-teal-400 border border-teal-200 dark:border-teal-800 flex items-center gap-1">💎 Invest</button>
+                    <button onClick={() => applyQuickAction('Bayar WiFi', '350000', 'Tagihan')} className="text-[10px] md:text-xs font-bold px-3 py-1.5 rounded-full bg-rose-50 hover:bg-rose-100 dark:bg-rose-900/20 text-rose-700 dark:text-rose-400 border border-rose-200 dark:border-rose-800 flex items-center gap-1">🧾 Tagihan</button>
+                    <button onClick={() => applyQuickAction('Makan Siang', '25000', 'Makanan')} className="text-[10px] md:text-xs font-bold px-3 py-1.5 rounded-full bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700">🍛 Makan</button>
+                  </div>
+                )}
+              </div>
               
               <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4 relative z-10">
                 <div>
-                  <input required placeholder="Ketik nama transaksi..." className="bg-slate-50 dark:bg-slate-950 p-4 rounded-xl sm:rounded-2xl outline-none focus:ring-2 ring-indigo-500/30 border border-slate-100 dark:border-slate-800 w-full transition-all text-sm sm:text-base" value={formData.title} onChange={e => setFormData({...formData, title: e.target.value})} />
-                  {!editingId && <p className="text-[10px] text-indigo-500/70 dark:text-indigo-400/50 mt-1.5 ml-1 flex items-center gap-1"><Sparkles size={10}/> Kategori akan menebak otomatis</p>}
+                  <input required placeholder="Ketik (misal: Beli Emas, Netflix...)" className="bg-slate-50 dark:bg-slate-950 p-4 rounded-xl sm:rounded-2xl outline-none focus:ring-2 ring-indigo-500/30 border border-slate-100 dark:border-slate-800 w-full transition-all text-sm sm:text-base" value={formData.title} onChange={e => setFormData({...formData, title: e.target.value})} />
                 </div>
-                <input required type="number" min="1" placeholder="Jumlah Nominal (Rp)" className="bg-slate-50 dark:bg-slate-950 p-4 rounded-xl sm:rounded-2xl outline-none focus:ring-2 ring-blue-500/20 border border-slate-100 dark:border-slate-800 w-full transition-all text-sm sm:text-base h-fit" value={formData.amount} onChange={e => setFormData({...formData, amount: e.target.value})} />
+                <div>
+                  <input required type="number" placeholder="Jumlah Nominal Angka" className="bg-slate-50 dark:bg-slate-950 p-4 rounded-xl sm:rounded-2xl outline-none focus:ring-2 ring-blue-500/20 border border-slate-100 dark:border-slate-800 w-full transition-all text-sm sm:text-base h-fit font-bold text-slate-800 dark:text-white" value={formData.amount} onChange={e => setFormData({...formData, amount: e.target.value})} />
+                  {formData.amount && <p className="text-[10px] md:text-xs text-blue-600 dark:text-blue-400 font-bold mt-1.5 ml-1">Terbaca: {formatIDR(Number(formData.amount))}</p>}
+                </div>
                 <div className="flex gap-3 md:gap-4 col-span-1 md:col-span-2 flex-col sm:flex-row">
                   <select className="bg-slate-50 dark:bg-slate-950 p-4 rounded-xl sm:rounded-2xl outline-none border border-slate-100 dark:border-slate-800 flex-1 font-medium text-slate-700 dark:text-slate-300 transition-all focus:ring-2 ring-blue-500/20 text-sm sm:text-base" value={formData.type} onChange={e => setFormData({...formData, type: e.target.value})}>
-                    <option value="pengeluaran">💸 Pengeluaran</option>
-                    <option value="pemasukan">💰 Pemasukan</option>
+                    <option value="pengeluaran">💸 Pengeluaran / Beli Aset</option>
+                    <option value="pemasukan">💰 Pemasukan Kas</option>
                   </select>
                   <div className="relative flex-1">
                     <select className={`${editingId ? 'bg-slate-50 dark:bg-slate-950 border-slate-100 dark:border-slate-800 text-slate-700 dark:text-slate-300' : 'bg-indigo-50/50 dark:bg-indigo-950/20 border-indigo-100 dark:border-indigo-800/50 text-indigo-800 dark:text-indigo-300'} p-4 rounded-xl sm:rounded-2xl outline-none border w-full font-medium transition-all focus:ring-2 ring-indigo-500/30 text-sm sm:text-base appearance-none cursor-pointer`} value={formData.category} onChange={e => setFormData({...formData, category: e.target.value})}>
-                      {formData.type === 'pengeluaran' ? (
-                        <><option value="Makanan">🍜 Makanan</option><option value="Transportasi">🚗 Transportasi</option><option value="Tagihan">🧾 Tagihan</option><option value="Hiburan">🎮 Hiburan</option><option value="Lainnya">📦 Lainnya</option></>
-                      ) : (
-                        <><option value="Gaji">💼 Gaji</option><option value="Bonus">✨ Bonus</option><option value="Investasi">📈 Investasi</option><option value="Lainnya">📦 Lainnya</option></>
-                      )}
+                      {formData.type === 'pengeluaran' ? <><option value="Makanan">🍜 Makanan</option><option value="Transportasi">🚗 Transportasi</option><option value="Tagihan">🧾 Tagihan (Bills)</option><option value="Belanja">🛍️ Belanja</option><option value="Hiburan">🎮 Hiburan</option><option value="Investasi" className="font-bold text-teal-600">📈 Investasi (Aset)</option><option value="Lainnya">📦 Lainnya</option></> : <><option value="Gaji">💼 Gaji</option><option value="Bonus">✨ Bonus</option><option value="Investasi" className="font-bold text-teal-600">📉 Jual Investasi</option><option value="Lainnya">📦 Lainnya</option></>}
                     </select>
                     {!editingId && <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-indigo-400"><Bot size={18}/></div>}
                   </div>
                 </div>
                 
                 <div className="col-span-1 md:col-span-2 flex gap-2 md:gap-3 mt-1 md:mt-2">
-                  <button disabled={isSubmitting} className={`flex-1 text-white font-bold p-4 rounded-xl sm:rounded-2xl transition-all active:scale-[0.98] disabled:opacity-50 text-sm sm:text-base ${editingId ? 'bg-amber-500 hover:bg-amber-600' : 'bg-slate-900 dark:bg-blue-600 hover:bg-slate-800 dark:hover:bg-blue-700'}`}>
+                  <button disabled={isSubmitting} className={`flex-1 text-white font-bold p-4 rounded-xl sm:rounded-2xl transition-all active:scale-[0.98] disabled:opacity-50 text-sm sm:text-base shadow-md ${editingId ? 'bg-amber-500 hover:bg-amber-600 shadow-amber-200 dark:shadow-none' : 'bg-slate-900 dark:bg-blue-600 hover:bg-slate-800 dark:hover:bg-blue-700 shadow-slate-300 dark:shadow-none'}`}>
                     {isSubmitting ? 'Memproses...' : editingId ? 'Update Transaksi' : 'Simpan Transaksi'}
                   </button>
-                  {editingId && (
-                    <button type="button" onClick={handleCancelEdit} className="px-6 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-bold rounded-xl sm:rounded-2xl hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors text-sm sm:text-base">
-                      Batal
-                    </button>
-                  )}
+                  {editingId && <button type="button" onClick={handleCancelEdit} className="px-6 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-bold rounded-xl sm:rounded-2xl hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors text-sm sm:text-base">Batal</button>}
                 </div>
               </form>
             </section>
 
-            {/* HISTORY & PENCARIAN */}
+            {/* HISTORY (RIWAYAT) */}
             <section className="bg-white dark:bg-slate-900 rounded-3xl md:rounded-[2.5rem] shadow-sm border border-slate-100 dark:border-slate-800 overflow-hidden flex flex-col">
-              <div className="p-5 md:p-8 border-b border-slate-50 dark:border-slate-800/50 bg-white dark:bg-slate-900 z-10 flex flex-col gap-4">
+              <div className="p-5 md:p-8 border-b border-slate-50 dark:border-slate-800/50 bg-slate-50 dark:bg-slate-950 z-10 flex flex-col gap-4">
                 <div className="flex justify-between items-center">
                   <h2 className="text-lg md:text-xl font-bold flex items-center gap-2 text-slate-800 dark:text-white"><Calendar className="text-blue-500"/> Riwayat Aktivitas</h2>
-                  {loading && <div className="h-5 w-5 border-2 border-blue-500 border-t-transparent animate-spin rounded-full" />}
                 </div>
-                <div className="flex items-center bg-slate-50 dark:bg-slate-950 p-3 rounded-xl border border-slate-100 dark:border-slate-800 focus-within:ring-2 ring-blue-500/20 transition-all">
-                  <Search size={18} className="text-slate-400 mr-2 shrink-0" />
-                  <input type="text" placeholder="Cari transaksi atau kategori..." className="bg-transparent outline-none w-full text-sm md:text-base text-slate-700 dark:text-slate-200" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
+                <div className="flex flex-col sm:flex-row gap-2 md:gap-3">
+                  <div className="flex flex-1 items-center bg-white dark:bg-slate-900 p-3 rounded-xl border border-slate-100 dark:border-slate-800 focus-within:ring-2 ring-blue-500/20 transition-all shadow-sm">
+                    <Search size={18} className="text-slate-400 mr-2 shrink-0" />
+                    <input type="text" placeholder="Cari transaksi..." className="bg-transparent outline-none w-full text-sm md:text-base text-slate-700 dark:text-slate-200" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
+                  </div>
+                  <div className="flex items-center bg-white dark:bg-slate-900 p-3 rounded-xl border border-slate-100 dark:border-slate-800 focus-within:ring-2 ring-blue-500/20 transition-all shadow-sm">
+                    <ArrowUpDown size={18} className="text-slate-400 mr-2 shrink-0" />
+                    <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} className="bg-transparent outline-none w-full text-sm md:text-base text-slate-700 dark:text-slate-200 cursor-pointer">
+                      <option value="newest">Terbaru</option><option value="oldest">Terlama</option><option value="highest">Terbesar</option><option value="lowest">Terkecil</option>
+                    </select>
+                  </div>
                 </div>
               </div>
 
-              <div className="max-h-[350px] md:max-h-[400px] overflow-y-auto custom-scrollbar">
-                {filteredTransactions.length === 0 && !loading ? (
-                  <div className="p-10 md:p-16 text-center text-slate-400 flex flex-col items-center">
-                    <Tag size={48} className="mb-4 opacity-20" />
-                    <p className="font-medium italic text-sm md:text-base">{searchQuery ? 'Data tidak ditemukan.' : 'Belum ada transaksi.'}</p>
-                  </div>
+              <div className="max-h-[500px] overflow-y-auto custom-scrollbar p-2">
+                {filteredTransactions.length === 0 ? (
+                  <div className="p-10 text-center text-slate-400"><p className="font-medium italic">Belum ada transaksi.</p></div>
                 ) : (
                   filteredTransactions.map((t) => ( 
-                    <div key={t.id} className={`p-4 md:p-6 flex justify-between items-center hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors border-b border-slate-50 dark:border-slate-800/50 last:border-0 group ${editingId === t.id ? 'bg-amber-50/50 dark:bg-amber-900/10' : ''}`}>
-                      <div className="flex items-center gap-3 md:gap-4">
-                        <div className={`p-3 md:p-4 rounded-xl md:rounded-2xl transition-all group-hover:scale-110 ${t.type === 'pemasukan' ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600' : 'bg-rose-50 dark:bg-rose-900/20 text-rose-600'}`}>
-                          {t.type === 'pemasukan' ? <ArrowUpRight size={18}/> : <ArrowDownRight size={18}/>}
+                    <div key={t.id} className={`m-2 p-4 rounded-2xl flex flex-col sm:flex-row justify-between sm:items-center border border-slate-100 dark:border-slate-800 hover:shadow-md transition-all ${editingId === t.id ? 'bg-amber-50 dark:bg-amber-900/10 border-amber-200' : 'bg-white dark:bg-slate-900'}`}>
+                      
+                      <div className="flex items-center gap-3 md:gap-4 mb-3 sm:mb-0">
+                        <div className={`p-3 md:p-4 rounded-xl md:rounded-2xl ${t.type === 'pemasukan' ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600' : t.category === 'Investasi' ? 'bg-teal-50 dark:bg-teal-900/20 text-teal-600' : 'bg-rose-50 dark:bg-rose-900/20 text-rose-600'}`}>
+                          {t.type === 'pemasukan' ? <ArrowUpRight size={18}/> : t.category === 'Investasi' ? <Gem size={18}/> : <ArrowDownRight size={18}/>}
                         </div>
                         <div>
-                          <p className="font-bold text-slate-800 dark:text-slate-200 capitalize text-sm md:text-base truncate max-w-[120px] sm:max-w-[180px] md:max-w-xs">{t.title}</p>
+                          <p className="font-bold text-slate-800 dark:text-slate-200 capitalize text-sm md:text-base truncate max-w-[200px]">{t.title}</p>
                           <div className="flex items-center gap-2 mt-0.5 md:mt-1 flex-wrap">
                             <span className="text-[10px] md:text-xs text-slate-400 font-medium">{new Date(t.created_at).toLocaleDateString('id-ID', { day: '2-digit', month: 'short' })}</span>
-                            <span className="w-1 h-1 rounded-full bg-slate-300 dark:bg-slate-600 hidden sm:block"></span>
-                            <span className="text-[10px] md:text-xs text-slate-500 dark:text-slate-400 font-medium bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-md">{t.category}</span>
+                            <span className="w-1 h-1 rounded-full bg-slate-300 dark:bg-slate-600"></span>
+                            <span className="text-[10px] md:text-xs text-slate-500 font-medium bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-md">{t.category}</span>
                           </div>
                         </div>
                       </div>
                       
-                      <div className="flex flex-col items-end gap-1.5">
-                        <p className={`text-sm md:text-lg font-black tracking-tight ${t.type === 'pemasukan' ? 'text-emerald-500' : 'text-rose-500'}`}>
-                          {t.type === 'pemasukan' ? '+' : '-'} {formatIDR(Number(t.amount))}
+                      <div className="flex flex-row sm:flex-col items-center sm:items-end justify-between sm:justify-center gap-1.5 w-full sm:w-auto">
+                        <p className={`text-sm md:text-lg font-black tracking-tight ${t.type === 'pemasukan' ? 'text-emerald-500' : t.category === 'Investasi' ? 'text-teal-500' : 'text-rose-500'}`}>
+                          {t.type === 'pemasukan' ? '+' : '-'} {displayMoney(Number(t.amount))}
                         </p>
-                        <div className="flex items-center gap-1.5 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity duration-200">
-                          <button onClick={() => handleEditClick(t)} className="p-1.5 text-amber-600 bg-amber-50 hover:bg-amber-100 dark:bg-amber-500/10 dark:text-amber-400 dark:hover:bg-amber-500/20 rounded-lg transition-colors" title="Edit Transaksi">
-                            <Edit2 size={14} />
+                        
+                        <div className="flex items-center gap-1.5">
+                          <button onClick={() => setSelectedReceipt(t)} className="px-2 py-1.5 text-blue-600 bg-blue-50 hover:bg-blue-100 dark:bg-blue-900/30 dark:text-blue-400 rounded-lg flex items-center gap-1 transition-colors border border-blue-100 dark:border-blue-800/50" title="Lihat Struk Digital">
+                            <Receipt size={14} /> <span className="text-[10px] font-bold uppercase tracking-wider hidden sm:block">Struk</span>
                           </button>
-                          <button onClick={() => handleDeleteTransaction(t.id)} className="p-1.5 text-rose-600 bg-rose-50 hover:bg-rose-100 dark:bg-rose-500/10 dark:text-rose-400 dark:hover:bg-rose-500/20 rounded-lg transition-colors" title="Hapus Transaksi">
-                            <Trash2 size={14} />
-                          </button>
+                          
+                          <button onClick={() => handleEditClick(t)} className="p-1.5 text-amber-600 bg-amber-50 hover:bg-amber-100 dark:bg-amber-900/30 dark:text-amber-400 rounded-lg transition-colors border border-amber-100 dark:border-amber-800/50" title="Edit Transaksi"><Edit2 size={14} /></button>
+                          <button onClick={() => handleDeleteTransaction(t.id)} className="p-1.5 text-rose-600 bg-rose-50 hover:bg-rose-100 dark:bg-rose-900/30 dark:text-rose-400 rounded-lg transition-colors border border-rose-100 dark:border-rose-800/50" title="Hapus Transaksi"><Trash2 size={14} /></button>
                         </div>
                       </div>
+                      
                     </div>
                   ))
                 )}
@@ -569,50 +689,67 @@ export default function DompetPintarPro() {
             </section>
           </div>
 
+          {/* KOLOM KANAN (CHART & MICRO-BUDGETING) */}
           <div className="space-y-6 md:space-y-8">
-            {/* CASHFLOW CHART */}
+            
+            {/* VISUAL TRACKER MICRO-BUDGETING */}
             <section className="bg-white dark:bg-slate-900 p-5 md:p-8 rounded-3xl md:rounded-[2.5rem] shadow-sm border border-slate-100 dark:border-slate-800">
-              <h2 className="text-base md:text-lg font-bold mb-4 md:mb-6 flex items-center gap-2 text-slate-800 dark:text-white"><PieIcon size={20} className="text-blue-500"/> Analisis Cashflow</h2>
-              <div className="h-48 md:h-56 w-full relative">
-                {stats.income === 0 && stats.expense === 0 ? (
-                   <div className="absolute inset-0 flex items-center justify-center text-slate-400 text-sm font-medium">Data belum cukup</div>
-                ) : (
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie data={chartData} innerRadius={55} outerRadius={75} paddingAngle={8} dataKey="value" stroke="none">
-                        {chartData.map((entry, index) => <Cell key={index} fill={entry.color} />)}
-                      </Pie>
-                     <Tooltip formatter={(value: any) => formatIDR(Number(value))} contentStyle={{backgroundColor: isDarkMode ? '#0f172a' : '#fff', border: 'none', borderRadius: '12px', color: isDarkMode ? '#fff' : '#000', fontSize: '12px'}} />
-                    </PieChart>
-                  </ResponsiveContainer>
-                )}
+              <div className="flex justify-between items-center mb-6 border-b border-slate-100 dark:border-slate-800 pb-4">
+                <div>
+                  <h2 className="text-base md:text-lg font-bold flex items-center gap-2 text-slate-800 dark:text-white"><AlertOctagon className="text-rose-500"/> Batas Anggaran</h2>
+                  <p className="text-[10px] md:text-xs text-slate-500 mt-1">Peringatan limit kategori (Micro-budgeting)</p>
+                </div>
+                <button onClick={() => setIsEditingSettings(true)} className="text-xs font-bold text-blue-600 bg-blue-50 dark:bg-blue-900/20 px-3 py-1.5 rounded-lg border border-blue-100 dark:border-blue-800/50 hover:bg-blue-100 transition-colors">Ubah Batas</button>
               </div>
-              <div className="mt-4 md:mt-6 flex justify-around p-3 md:p-4 bg-slate-50 dark:bg-slate-950 rounded-xl md:rounded-2xl">
-                <div className="text-center">
-                  <p className="text-[9px] md:text-[10px] uppercase font-bold text-slate-400 mb-1 tracking-widest">Pemasukan</p>
-                  <p className="text-emerald-500 font-black text-base md:text-lg">{(stats.income/(stats.income+stats.expense || 1) * 100).toFixed(0)}%</p>
-                </div>
-                <div className="w-px bg-slate-200 dark:bg-slate-800"></div>
-                <div className="text-center">
-                  <p className="text-[9px] md:text-[10px] uppercase font-bold text-slate-400 mb-1 tracking-widest">Pengeluaran</p>
-                  <p className="text-rose-500 font-black text-base md:text-lg">{(stats.expense/(stats.income+stats.expense || 1) * 100).toFixed(0)}%</p>
-                </div>
+
+              <div className="space-y-4">
+                {Object.keys(catBudgets).filter(k => Number(catBudgets[k]) > 0).length === 0 ? (
+                  <div className="text-center p-6 bg-slate-50 dark:bg-slate-950 rounded-2xl text-slate-400 text-sm border border-dashed border-slate-200 dark:border-slate-800">
+                    Belum ada batas anggaran yang diatur. Klik <b>Ubah Batas</b>.
+                  </div>
+                ) : (
+                  Object.keys(catBudgets).filter(k => Number(catBudgets[k]) > 0).map(cat => {
+                    const limit = Number(catBudgets[cat]);
+                    const spent = filteredTransactions.filter(t => t.type === 'pengeluaran' && t.category === cat).reduce((acc, curr) => acc + Number(curr.amount), 0);
+                    const percent = Math.min(100, Math.round((spent / limit) * 100));
+                    const isDanger = spent > limit;
+                    const isWarning = spent > limit * 0.8 && !isDanger;
+                    
+                    return (
+                      <div key={cat} className="bg-slate-50 dark:bg-slate-950 p-4 rounded-2xl border border-slate-100 dark:border-slate-800">
+                        <div className="flex justify-between items-end mb-2">
+                          <div>
+                            <p className="text-sm font-bold text-slate-800 dark:text-white flex items-center gap-2">{cat} {isDanger && <AlertTriangle size={14} className="text-rose-500 animate-pulse"/>}</p>
+                            <p className="text-[10px] text-slate-500 uppercase tracking-widest">{formatIDR(spent)} / {formatIDR(limit)}</p>
+                          </div>
+                          <span className={`text-xs font-black ${isDanger ? 'text-rose-500' : isWarning ? 'text-amber-500' : 'text-emerald-500'}`}>{percent}%</span>
+                        </div>
+                        <div className="h-2 w-full bg-slate-200 dark:bg-slate-800 rounded-full overflow-hidden">
+                          <div className={`h-full transition-all duration-500 ${isDanger ? 'bg-rose-500' : isWarning ? 'bg-amber-400' : 'bg-emerald-400'}`} style={{ width: `${percent}%` }} />
+                        </div>
+                        {isDanger && <p className="text-[10px] text-rose-500 mt-2 font-bold bg-rose-50 dark:bg-rose-900/20 px-2 py-1 rounded inline-block">⚠️ Batas terlewati {formatIDR(spent - limit)}!</p>}
+                      </div>
+                    )
+                  })
+                )}
               </div>
             </section>
 
-            {/* CATEGORY CHART */}
+            {/* CATEGORY CHART (KONSUMSI ONLY) */}
             <section className="bg-white dark:bg-slate-900 p-5 md:p-8 rounded-3xl md:rounded-[2.5rem] shadow-sm border border-slate-100 dark:border-slate-800">
-              <h2 className="text-base md:text-lg font-bold mb-4 md:mb-6 flex items-center gap-2 text-slate-800 dark:text-white"><Tag size={20} className="text-blue-500"/> Alokasi Kategori</h2>
+              <h2 className="text-base md:text-lg font-bold mb-1 flex items-center gap-2 text-slate-800 dark:text-white"><Tag size={20} className="text-blue-500"/> Alokasi Konsumsi</h2>
+              <p className="text-[10px] text-slate-400 mb-4">*Di luar Aset Investasi</p>
+              
               <div className="h-40 md:h-48 w-full relative">
                 {categoryChartData.length === 0 ? (
                    <div className="absolute inset-0 flex items-center justify-center text-slate-400 text-sm font-medium">Belum ada pengeluaran</div>
                 ) : (
-                  <ResponsiveContainer width="100%" height="100%">
+                  <ResponsiveContainer width="100%" height="100%" minWidth={100} minHeight={100}>
                     <PieChart>
                       <Pie data={categoryChartData} innerRadius={45} outerRadius={65} paddingAngle={5} dataKey="value" stroke="none">
                         {categoryChartData.map((entry, index) => <Cell key={index} fill={entry.color} />)}
                       </Pie>
-                     <Tooltip formatter={(value: any) => formatIDR(Number(value))} contentStyle={{backgroundColor: isDarkMode ? '#0f172a' : '#fff', border: 'none', borderRadius: '12px', color: isDarkMode ? '#fff' : '#000', fontSize: '12px'}} />
+                      <Tooltip formatter={(value: any) => formatIDR(Number(value))} contentStyle={{backgroundColor: isDarkMode ? '#0f172a' : '#fff', border: 'none', borderRadius: '12px', color: isDarkMode ? '#fff' : '#000', fontSize: '12px'}} />
                     </PieChart>
                   </ResponsiveContainer>
                 )}
@@ -624,89 +761,100 @@ export default function DompetPintarPro() {
                       <div className="w-2.5 h-2.5 md:w-3 md:h-3 rounded-full shrink-0" style={{backgroundColor: item.color}}></div>
                       <span className="text-slate-600 dark:text-slate-300 font-medium truncate max-w-[100px]">{item.name}</span>
                     </div>
-                    <span className="font-bold text-slate-800 dark:text-white">{formatIDR(item.value)}</span>
+                    <span className="font-bold text-slate-800 dark:text-white">{displayMoney(item.value)}</span>
                   </div>
                 ))}
               </div>
             </section>
 
-            {/* SMART TRACKER */}
-            <section className="relative overflow-hidden bg-slate-900 p-6 md:p-8 rounded-3xl md:rounded-[2.5rem] text-white shadow-xl shadow-slate-300 dark:shadow-none">
-              <div className="absolute top-0 right-0 -mt-4 -mr-4 w-24 h-24 md:w-32 md:h-32 bg-blue-500 rounded-full blur-[40px] md:blur-[60px] opacity-40"></div>
-              <div className="absolute bottom-0 left-0 -mb-4 -ml-4 w-24 h-24 md:w-32 md:h-32 bg-emerald-500 rounded-full blur-[40px] md:blur-[60px] opacity-30"></div>
-
-              <div className="relative z-10">
-                <h2 className="text-slate-400 text-[10px] md:text-xs font-black uppercase tracking-[0.2em] mb-2">Estimasi Pengumpulan</h2>
-                <div className="flex items-baseline gap-2 mb-6 md:mb-8">
-                  <span className="text-4xl md:text-6xl font-black tracking-tighter">{stats.days > 0 ? stats.days : '∞'}</span>
-                  <span className="text-slate-400 font-bold text-sm md:text-lg italic">Hari Lagi</span>
-                </div>
-
-                <div className="space-y-4 md:space-y-6">
-                  <div className="bg-white/10 p-4 md:p-5 rounded-2xl md:rounded-3xl border border-white/10 backdrop-blur-sm">
-                    <p className="text-[9px] md:text-[10px] text-slate-300 font-bold uppercase mb-1 md:mb-2 tracking-widest">Rekomendasi Menabung</p>
-                    <p className="text-xl md:text-2xl font-black text-emerald-400 tracking-tight">
-                      {stats.days > 0 ? formatIDR(stats.dailyRec) : 'Rp 0'}
-                      <span className="text-xs md:text-sm font-medium text-slate-400 ml-1">/ hari</span>
-                    </p>
-                  </div>
-
-                  <div className="space-y-2 md:space-y-3 pt-1 md:pt-2">
-                    <div className="flex justify-between text-[10px] md:text-xs font-bold uppercase tracking-widest">
-                      <span className="text-slate-400">Progres Target</span>
-                      <span className="text-emerald-400">{Math.min(100, Math.round((stats.balance/targetSaving)*100))}%</span>
-                    </div>
-                    <div className="h-2.5 md:h-3 w-full bg-slate-800 rounded-full overflow-hidden shadow-inner">
-                      <div className="h-full bg-gradient-to-r from-emerald-500 to-blue-400 transition-all duration-1000 ease-out" style={{ width: `${Math.max(0, Math.min(100, (stats.balance/targetSaving)*100))}%` }} />
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </section>
           </div>
         </div>
 
-        {/* FOOTER DASHBOARD */}
-        <footer className="mt-10 md:mt-16 text-center pb-4 md:pb-6">
-          <p className="text-slate-400 dark:text-slate-500 text-xs md:text-sm font-medium">
-            &copy; {new Date().getFullYear()} Dompet Pintar. By Dewasinarsurya.
-          </p>
-        </footer>
-
       </div>
 
-      {/* MODAL SETTINGS */}
+      {/* POPUP STRUK DIGITAL E-RECEIPT */}
+      {selectedReceipt && (
+        <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-[100] flex items-center justify-center p-4 animate-in fade-in duration-200" onClick={() => setSelectedReceipt(null)}>
+          <div className="bg-[#1e293b] w-full max-w-sm rounded-[2rem] shadow-2xl overflow-hidden relative" onClick={e => e.stopPropagation()}>
+            <div className={`p-6 text-center ${selectedReceipt.type === 'pemasukan' ? 'bg-emerald-500' : selectedReceipt.category === 'Investasi' ? 'bg-teal-500' : 'bg-rose-500'} text-white`}>
+              <div className="w-12 h-12 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-3 backdrop-blur-md">
+                {selectedReceipt.type === 'pemasukan' ? <ArrowUpRight size={24}/> : selectedReceipt.category === 'Investasi' ? <Gem size={24}/> : <ArrowDownRight size={24}/>}
+              </div>
+              <h3 className="font-black text-xl tracking-wide uppercase">Transaksi Berhasil</h3>
+              <p className="text-white/80 text-xs mt-1 font-medium">{new Date(selectedReceipt.created_at).toLocaleString('id-ID')}</p>
+            </div>
+            <div className="p-6 bg-white dark:bg-slate-900 relative">
+              <div className="absolute top-0 left-0 right-0 h-3 flex justify-between px-2 -mt-1.5 z-10">{[...Array(15)].map((_, i) => <div key={i} className="w-3 h-3 bg-white dark:bg-slate-900 rounded-full" />)}</div>
+              <div className="text-center mb-6 mt-2">
+                <p className="text-slate-500 dark:text-slate-400 text-xs font-bold uppercase tracking-widest mb-1">Total {selectedReceipt.type}</p>
+                <p className={`text-3xl font-black ${selectedReceipt.type === 'pemasukan' ? 'text-emerald-500' : selectedReceipt.category === 'Investasi' ? 'text-teal-500' : 'text-rose-500'}`}>
+                  {formatIDR(Number(selectedReceipt.amount))}
+                </p>
+              </div>
+              <div className="border-t-2 border-dashed border-slate-200 dark:border-slate-700 py-4 space-y-4">
+                <div className="flex justify-between items-start"><span className="text-slate-500 dark:text-slate-400 text-sm font-medium">Keterangan</span><span className="text-slate-800 dark:text-slate-200 text-sm font-bold text-right max-w-[60%]">{selectedReceipt.title}</span></div>
+                <div className="flex justify-between items-center"><span className="text-slate-500 dark:text-slate-400 text-sm font-medium">Kategori</span><span className="text-slate-800 dark:text-slate-200 text-sm font-bold">{selectedReceipt.category}</span></div>
+                <div className="flex justify-between items-center"><span className="text-slate-500 dark:text-slate-400 text-sm font-medium">Ref ID</span><span className="text-slate-800 dark:text-slate-200 text-xs font-bold font-mono bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded">{selectedReceipt.id.split('-')[0].toUpperCase()}</span></div>
+              </div>
+              <div className="border-t-2 border-dashed border-slate-200 dark:border-slate-700 pt-6 pb-2 text-center">
+                <div className="h-10 w-full flex justify-center gap-1 opacity-50 dark:opacity-30">{[...Array(30)].map((_, i) => <div key={i} className="bg-black dark:bg-white h-full" style={{ width: `${Math.random() * 4 + 1}px` }} />)}</div>
+                <p className="text-[10px] text-slate-400 mt-2 font-bold tracking-widest uppercase">DompetPintar By Dewasinarsurya</p>
+              </div>
+            </div>
+            <button onClick={() => setSelectedReceipt(null)} className="absolute top-4 right-4 text-white/70 hover:text-white bg-black/20 hover:bg-black/40 p-2 rounded-full backdrop-blur-sm transition-all"><X size={16} /></button>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL SETTINGS PENGATURAN (PURE NUMBER) */}
       {isEditingSettings && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
-          <div className="bg-white dark:bg-slate-900 rounded-[2rem] md:rounded-[2.5rem] p-6 md:p-8 w-full max-w-md shadow-2xl border border-slate-100 dark:border-slate-800 max-h-[90vh] overflow-y-auto">
-            <div className="flex justify-between items-center mb-6 md:mb-8 sticky top-0 bg-white dark:bg-slate-900 pt-2 pb-2 z-10">
-              <h3 className="text-xl md:text-2xl font-black text-slate-800 dark:text-white tracking-tight">Atur Dompet</h3>
-              <button onClick={() => setIsEditingSettings(false)} className="bg-slate-100 dark:bg-slate-800 p-2 rounded-full text-slate-500 dark:text-slate-400 hover:text-rose-500 hover:bg-rose-50 transition-all">
-                <X size={20} />
-              </button>
+          <div className="bg-white dark:bg-slate-900 rounded-[2rem] md:rounded-[2.5rem] p-6 md:p-8 w-full max-w-2xl shadow-2xl border border-slate-100 dark:border-slate-800 max-h-[90vh] overflow-y-auto custom-scrollbar">
+            <div className="flex justify-between items-center mb-6 md:mb-8 sticky top-0 bg-white dark:bg-slate-900 pt-2 pb-2 z-10 border-b border-slate-100 dark:border-slate-800">
+              <h3 className="text-xl md:text-2xl font-black text-slate-800 dark:text-white tracking-tight">Pengaturan Lanjutan</h3>
+              <button onClick={() => setIsEditingSettings(false)} className="bg-slate-100 dark:bg-slate-800 p-2 rounded-full text-slate-500 dark:text-slate-400 hover:text-rose-500 hover:bg-rose-50 transition-all"><X size={20} /></button>
             </div>
             
-            <div className="space-y-5 md:space-y-6">
-              <div>
-                <label className="text-[10px] md:text-xs font-bold text-slate-500 uppercase tracking-widest mb-1 md:mb-2 block">Saldo Awal (Rp)</label>
-                <p className="text-[10px] md:text-xs text-slate-400 mb-2 md:mb-3">Uang yang sudah kamu miliki saat ini.</p>
-                <input type="number" className="w-full bg-slate-50 dark:bg-slate-950 p-3 md:p-4 rounded-xl md:rounded-2xl border border-slate-200 dark:border-slate-800 outline-none focus:ring-2 ring-blue-500/20 text-base md:text-lg font-bold text-slate-800 dark:text-white" value={initialBalance} onChange={e => setInitialBalance(Number(e.target.value))} />
-              </div>
-              <div>
-                <label className="text-[10px] md:text-xs font-bold text-slate-500 uppercase tracking-widest mb-1 md:mb-2 block">Target Tabungan (Rp)</label>
-                <p className="text-[10px] md:text-xs text-slate-400 mb-2 md:mb-3">Goal finansial yang ingin kamu capai.</p>
-                <input type="number" className="w-full bg-slate-50 dark:bg-slate-950 p-3 md:p-4 rounded-xl md:rounded-2xl border border-slate-200 dark:border-slate-800 outline-none focus:ring-2 ring-blue-500/20 text-base md:text-lg font-bold text-slate-800 dark:text-white" value={targetSaving} onChange={e => setTargetSaving(Number(e.target.value))} />
-              </div>
-              <div>
-                <label className="text-[10px] md:text-xs font-bold text-rose-500 uppercase tracking-widest mb-1 md:mb-2 block">Batas Pengeluaran (Rp)</label>
-                <p className="text-[10px] md:text-xs text-slate-400 mb-2 md:mb-3">AI akan memperingatkanmu jika pengeluaran bulanan melewati batas ini.</p>
-                <input type="number" className="w-full bg-rose-50 dark:bg-rose-950/20 p-3 md:p-4 rounded-xl md:rounded-2xl border border-rose-200 dark:border-rose-800 outline-none focus:ring-2 ring-rose-500/20 text-base md:text-lg font-bold text-rose-800 dark:text-rose-200" value={budgetLimit} onChange={e => setBudgetLimit(Number(e.target.value))} />
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8">
+              {/* KOLOM KIRI: PENGATURAN UMUM */}
+              <div className="space-y-5">
+                <h4 className="font-bold text-slate-800 dark:text-white flex items-center gap-2"><Wallet size={18} className="text-blue-500"/> Data Dasar</h4>
+                <div>
+                  <label className="text-[10px] md:text-xs font-bold text-slate-500 uppercase tracking-widest mb-1 block">Saldo Kas Tunai Awal</label>
+                  <input type="number" placeholder="Contoh: 1000000" className="w-full bg-slate-50 dark:bg-slate-950 p-3 rounded-xl border border-slate-200 dark:border-slate-800 outline-none focus:ring-2 ring-blue-500/20 font-bold text-slate-800 dark:text-white" value={initialBalance} onChange={e => setInitialBalance(e.target.value)} />
+                  {initialBalance && <p className="text-[10px] text-blue-500 mt-1 font-bold">Terbaca: {formatIDR(Number(initialBalance))}</p>}
+                </div>
+                <div>
+                  <label className="text-[10px] md:text-xs font-bold text-slate-500 uppercase tracking-widest mb-1 block">Target Kekayaan Impian</label>
+                  <input type="number" placeholder="Contoh: 50000000" className="w-full bg-slate-50 dark:bg-slate-950 p-3 rounded-xl border border-slate-200 dark:border-slate-800 outline-none focus:ring-2 ring-blue-500/20 font-bold text-slate-800 dark:text-white" value={targetSaving} onChange={e => setTargetSaving(e.target.value)} />
+                  {targetSaving && <p className="text-[10px] text-blue-500 mt-1 font-bold">Terbaca: {formatIDR(Number(targetSaving))}</p>}
+                </div>
+                <div className="pt-4 border-t border-slate-100 dark:border-slate-800">
+                  <button onClick={handleResetData} disabled={isSubmitting} className="w-full bg-rose-50 dark:bg-rose-900/20 text-rose-600 font-bold py-3 rounded-xl hover:bg-rose-100 transition-all active:scale-95 disabled:opacity-50 text-sm">Hapus Semua Data (Reset)</button>
+                </div>
               </div>
 
-              <div className="pt-2 space-y-2 md:space-y-3">
-                <button onClick={saveSettings} className="w-full bg-blue-600 text-white font-bold py-3 md:py-4 rounded-xl md:rounded-2xl hover:bg-blue-700 transition-all shadow-lg shadow-blue-200 active:scale-95 text-sm md:text-base">Simpan Perubahan</button>
-                <button onClick={handleResetData} disabled={isSubmitting} className="w-full bg-rose-50 dark:bg-rose-900/20 text-rose-600 font-bold py-3 md:py-4 rounded-xl md:rounded-2xl hover:bg-rose-100 transition-all active:scale-95 disabled:opacity-50 text-sm md:text-base">{isSubmitting ? 'Menghapus Data...' : 'Hapus Semua Data (Reset)'}</button>
+              {/* KOLOM KANAN: MICRO BUDGETING */}
+              <div className="space-y-4">
+                <div>
+                  <h4 className="font-bold text-slate-800 dark:text-white flex items-center gap-2 mb-1"><AlertOctagon size={18} className="text-rose-500"/> Batas Anggaran Kategori</h4>
+                  <p className="text-[10px] text-slate-400 mb-4">Isi dengan angka saja. Kosongkan jika tidak dibatasi.</p>
+                </div>
+                
+                {['Makanan', 'Tagihan', 'Transportasi', 'Belanja', 'Hiburan'].map((cat) => (
+                  <div key={cat} className="flex flex-col bg-slate-50 dark:bg-slate-950 p-3 rounded-xl border border-slate-100 dark:border-slate-800">
+                    <div className="flex items-center gap-3">
+                      <div className="w-24 shrink-0 text-xs font-bold text-slate-600 dark:text-slate-300">{cat}</div>
+                      <input type="number" placeholder="Tanpa batas" className="w-full bg-transparent p-2 outline-none font-bold text-slate-800 dark:text-white text-sm border-b border-slate-200 dark:border-slate-800 focus:border-blue-500 transition-colors" value={catBudgets[cat]} onChange={e => setCatBudgets({...catBudgets, [cat]: e.target.value})} />
+                    </div>
+                    {catBudgets[cat] && <p className="text-[10px] text-blue-500 text-right mt-1 font-bold">Batas: {formatIDR(Number(catBudgets[cat]))}</p>}
+                  </div>
+                ))}
               </div>
+            </div>
+
+            <div className="mt-8 pt-6 border-t border-slate-100 dark:border-slate-800">
+              <button onClick={saveSettings} className="w-full bg-blue-600 text-white font-bold py-4 rounded-2xl hover:bg-blue-700 transition-all shadow-lg shadow-blue-200 active:scale-95">Simpan Pengaturan</button>
             </div>
           </div>
         </div>
@@ -731,7 +879,7 @@ function StatCard({ title, val, icon, color, bg }: any) {
       <div className={`${bg} ${color} p-3 md:p-4 rounded-xl md:rounded-2xl shrink-0`}>{icon}</div>
       <div className="overflow-hidden w-full">
         <p className="text-[9px] md:text-[10px] font-black text-slate-400 uppercase tracking-widest mb-0.5 md:mb-1 truncate">{title}</p>
-        <p className="text-sm sm:text-base md:text-xl font-black text-slate-800 dark:text-white tracking-tight truncate">{formatIDR(val)}</p>
+        <p className="text-sm sm:text-base md:text-xl font-black text-slate-800 dark:text-white tracking-tight truncate">{val}</p>
       </div>
     </div>
   );
